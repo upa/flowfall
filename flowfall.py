@@ -76,7 +76,7 @@ class Port () :
 
 
 class OFSwitch () :
-    def __init__ (self, dpid = dpid) :
+    def __init__ (self, dpid) :
         self.dpid = dpid
 
         self.ports = {}
@@ -165,9 +165,9 @@ class FlowFall (app_manager.RyuApp) :
         self.ofswitches = []
 
         for switch in ffconfig.ofswitches :
-            print "install OFSwitch \"%d\"" % switch["dpid"]
+            print "install OFSwitch DPID:%d" % switch["dpid"]
 
-            ofs = OFSwitch (dpid = switch["dpid"])
+            ofs = OFSwitch (switch["dpid"])
 
             for vnfupport in switch["vnf_up_ports"] :
                 port = Port (port_num = vnfupport["port_num"])
@@ -200,7 +200,7 @@ class FlowFall (app_manager.RyuApp) :
         self.rtree = radix.Radix ()
 
         for prefix in ffconfig.prefixes :
-            print "install prefix \"%s\"" % prefix["prefix"]
+            print "install prefix %s" % prefix["prefix"]
 
             rnode = self.rtree.add (prefix["prefix"])
             rnode.data["type"] = prefix["type"]
@@ -216,9 +216,15 @@ class FlowFall (app_manager.RyuApp) :
 
 
     def is_from_client (self, ipaddr) :
-        if self.rtree.search_best (ipaddr) :
-            return True
-        return False
+        rnode = self.rtree.search_best (ipaddr)
+
+        if not rnode :
+            return False
+
+        if rnode.data["type"] != "CLIENT" :
+            return False
+
+        return True
 
 
     @set_ev_cls (dpset.EventDP)
@@ -226,6 +232,10 @@ class FlowFall (app_manager.RyuApp) :
         if ev.enter :
             print "New DPID %s [ %s ]" \
                 % (ev.dp.id, " ".join (map (str, ev.dp.ports)))
+
+            if not self.find_ofs (ev.dp.id) :
+                print "Unknown DPID %d !!" % ev.dp.id
+
         else :
             print "DPID %s leaved" % (ev.dp.id)
 
@@ -287,9 +297,9 @@ class FlowFall (app_manager.RyuApp) :
                 # downlink to uplink
                 [to_port, mac] = ofs.get_port_mac (NON_UP, 1)
 
-            match = datapath.ofproto_parserOFPMatch ()
-            match.set_vlan_vid (vlan.vid)
-            match.set_dl_type (vlan.ethertype)
+            match = datapath.ofproto_parser.OFPMatch ()
+            match.dl_vlan = vlan.vid
+            match.dl_type = vlan.ethertype
             match.in_port = in_port
 
             actions = [datapath.ofproto_parser.OFPActionOutPut (to_port)]
@@ -297,7 +307,7 @@ class FlowFall (app_manager.RyuApp) :
             mod = datapath.ofproto_parser.OFPFlowMod (
                 datapath = datapath, match = match, cookie = 0,
                 command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
-                hard_timeout = 0, priority ofproto.OFP_DEFAULT_PRIORITY,
+                hard_timeout = 0, priority = ofproto.OFP_DEFAULT_PRIORITY,
                 flags = None, actions = actions)
             datapath.send_msg (mod)
             return
@@ -316,12 +326,13 @@ class FlowFall (app_manager.RyuApp) :
             [to_port, mac] = ofs.get_port_mac (port_type, key)
 
             # from downlink to uplink
-            match = datapath.ofproto_parserOFPMatch ()
-            match.set_vlan_vid (vlan.vid)
-            match.set_dl_type (vlan.ethertype)
-            match.set_ipv4_src (ip.src)
-            match.nw_tos = ip.tos
+            match = datapath.ofproto_parser.OFPMatch ()
             match.in_port = in_port
+            match.dl_vlan = vlan.vid
+            match.dl_type = vlan.ethertype
+            match.nw_src = ip.src
+            match.nw_tos = ip.tos
+
 
             actions = [
                 datapath.ofproto_parser.OFPActionSetDlDst (haddr_to_bin (mac)),
@@ -331,20 +342,21 @@ class FlowFall (app_manager.RyuApp) :
             mod = datapath.ofproto_parser.OFPFlowMod (
                 datapath = datapath, match = match, cookie = 0,
                 command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
-                hard_timeout = 0, priority ofproto.OFP_DEFAULT_PRIORITY,
+                hard_timeout = 0, priority = ofproto.OFP_DEFAULT_PRIORITY,
                 flags = None, actions = actions)
             datapath.send_msg (mod)
 
 
             # from uplink to downlink
-            match = datapath.ofproto_parserOFPMatch ()
-            match.set_vlan_vid (vlan.vid)
-            match.set_dl_type (vlan.ethertype)
-            match.set_ipv4_dst (ip.src)
-            match.nw_tos = ip.tos
+            match = datapath.ofproto_parser.OFPMatch ()
             match.in_port = to_port
+            match.dl_vlan = vlan.vid
+            match.dl_type = vlan.ethertype
+            match.nw_dst = ip.src
+            match.nw_tos = ip.tos
 
             actions = [
+
                 datapath.ofproto_parser.OFPActionSetDlDst (eth.src),
                 datapath.ofproto_parser.OFPActionOutPut (in_port)
                 ]
@@ -352,7 +364,7 @@ class FlowFall (app_manager.RyuApp) :
             mod = datapath.ofproto_parser.OFPFlowMod (
                 datapath = datapath, match = match, cookie = 0,
                 command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
-                hard_timeout = 0, priority ofproto.OFP_DEFAULT_PRIORITY,
+                hard_timeout = 0, priority = ofproto.OFP_DEFAULT_PRIORITY,
                 flags = None, actions = actions)
             datapath.send_msg (mod)
 
@@ -366,10 +378,11 @@ class FlowFall (app_manager.RyuApp) :
 
             # from downlink to uplink
             match = datapath.ofproto_parserOFPMatch ()
-            match.set_vlan_vid (vlan.vid)
-            match.set_dl_type (vlan.ethertype)
-            match.set_ipv4_src (ip.src)
             match.in_port = in_port
+            match.dl_vlan = vlan.vid
+            match.dl_type = vlan.ethertype
+            match.nw_src = ip.src
+
 
             actions = [
                 datapath.ofproto_parser.OFPActionSetDlDst (haddr_to_bin (mac)),
@@ -379,17 +392,18 @@ class FlowFall (app_manager.RyuApp) :
             mod = datapath.ofproto_parser.OFPFlowMod (
                 datapath = datapath, match = match, cookie = 0,
                 command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
-                hard_timeout = 0, priority ofproto.OFP_DEFAULT_PRIORITY,
+                hard_timeout = 0, priority = ofproto.OFP_DEFAULT_PRIORITY,
                 flags = None, actions = actions)
             datapath.send_msg (mod)
 
 
             # from uplink to downlink
             match = datapath.ofproto_parserOFPMatch ()
-            match.set_vlan_vid (vlan.vid)
-            match.set_dl_type (vlan.ethertype)
-            match.set_ipv4_dst (ip.src)
             match.in_port = to_port
+            match.dl_vlan = vlan.vid
+            match.dl_type = vlan.ethertype
+            match.nw_dst = ip.src
+
 
             actions = [
                 datapath.ofproto_parser.OFPActionSetDlDst (eth.src),
@@ -399,7 +413,7 @@ class FlowFall (app_manager.RyuApp) :
             mod = datapath.ofproto_parser.OFPFlowMod (
                 datapath = datapath, match = match, cookie = 0,
                 command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
-                hard_timeout = 0, priority ofproto.OFP_DEFAULT_PRIORITY,
+                hard_timeout = 0, priority = ofproto.OFP_DEFAULT_PRIORITY,
                 flags = None, actions = actions)
             datapath.send_msg (mod)
 
@@ -414,10 +428,11 @@ class FlowFall (app_manager.RyuApp) :
 
             # from uplink to downlink
             match = datapath.ofproto_parserOFPMatch ()
-            match.set_vlan_vid (vlan.vid)
-            match.set_dl_type (vlan.ethertype)
-            match.set_ipv4_dst (ip.dst)
             match.in_port = in_port
+            match.dl_vlan = vlan.vid
+            match.dl_type = vlan.ethertype
+            match.nw_src = ip.dst
+
 
             actions = [
                 datapath.ofproto_parser.OFPActionSetDlDst (haddr_to_bin (mac)),
@@ -427,7 +442,7 @@ class FlowFall (app_manager.RyuApp) :
             mod = datapath.ofproto_parser.OFPFlowMod (
                 datapath = datapath, match = match, cookie = 0,
                 command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
-                hard_timeout = 0, priority ofproto.OFP_DEFAULT_PRIORITY,
+                hard_timeout = 0, priority = ofproto.OFP_DEFAULT_PRIORITY,
                 flags = None, actions = actions)
             datapath.send_msg (mod)
 
