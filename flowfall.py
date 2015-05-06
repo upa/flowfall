@@ -39,7 +39,10 @@ def ipv4_text_to_int(ip_text):
     assert isinstance(ip_text, str)
     return struct.unpack('!I', addrconv.ipv4.text_to_bin(ip_text))[0]
 
-                
+
+# static variables
+IDLE_TIMEOUT = 30
+
 
 # port_type
 VNF_UP   = 0 # to vnf uplink port
@@ -97,22 +100,22 @@ class OFSwitch () :
 
         if port_type == VNF_DOWN or port_type == NON_DOWN :
             self.downlink_ports.append (port)
-        
+
         return
 
 
     def get_port (self, port_type, key) :
-        
+
         portlist = self.ports[port_type]
 
         if not portlist :
             return None
 
         return self.portlist[key % len (self.portlist)]
-    
+
 
     def get_port_mac (self, port_type, key) :
-        
+
         port = self.get_port (port_type, key)
 
         if not port :
@@ -122,7 +125,7 @@ class OFSwitch () :
 
     def dpid (self) :
         return self.dpid
-        
+
 
     def is_from_uplink (self, port_num) :
 
@@ -144,11 +147,11 @@ class OFSwitch () :
 
         return True
 
-    
+
     def check_tos_vnf (self, tos) :
         return True
 
-    
+
 class FlowFall (app_manager.RyuApp) :
     OFP_VERSIONS = [ofproto_v1_0.OFP_VERSION]
     _CONTEXTS = { 'dpset' : dpset.DPSet, }
@@ -244,7 +247,7 @@ class FlowFall (app_manager.RyuApp) :
 
         3. check, is packet from NOT CLIENT and downlink ports ?
             -> set to NON-VNF uplink flow, and downlink flow (to in_port)
-                > uplink   : MATCH in_port, source IP or ETHER_TYPE
+                > uplink   : MATCH in_port, source IP
                 > downlink : MATCH in_port, destination IP
 
         4. check, is packet from uplink ports ?
@@ -267,16 +270,16 @@ class FlowFall (app_manager.RyuApp) :
         pkt = packet.Packet (msg.data)
         in_port = msg.in_port
         eth = pkt.get_protocol (ethernet.ethernet)
-        
+
         if eth.ethertype != ether.ETH_TYPE_8021Q :
             print "not untagged packet"
             return
 
         vlan = pkt.get_protocol (vlan.vlan)
-        
+
         # check rule 1.
         if not vlan.ethertype != ether.ETH_TYPE_IP :
-            
+
             if ofs.is_from_uplink (in_port) :
                 # uplink to downlink
                 [to_port, mac] = ofs.get_port_mac (NON_DOWN, 1)
@@ -293,17 +296,17 @@ class FlowFall (app_manager.RyuApp) :
 
             mod = datapath.ofproto_parser.OFPFlowMod (
                 datapath = datapath, match = match, cookie = 0,
-                command = ofproto.OFPFC_ADD, idle_timeout = 10, 
+                command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
                 hard_timeout = 0, priority ofproto.OFP_DEFAULT_PRIORITY,
                 flags = None, actions = actions)
             datapath.send_msg (mod)
             return
 
-                
+
         # check rule 2.
         ip = pkt.get_protocol (ipv4.ipv4)
         if ofs.is_from_downlink (in_port) and self.is_from_client (ip.ip_src) :
-            
+
             if ofs.check_tos_vnf (ip.tos) :
                 port_type = VNF_UP
             else :
@@ -327,7 +330,7 @@ class FlowFall (app_manager.RyuApp) :
 
             mod = datapath.ofproto_parser.OFPFlowMod (
                 datapath = datapath, match = match, cookie = 0,
-                command = ofproto.OFPFC_ADD, idle_timeout = 10, 
+                command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
                 hard_timeout = 0, priority ofproto.OFP_DEFAULT_PRIORITY,
                 flags = None, actions = actions)
             datapath.send_msg (mod)
@@ -348,7 +351,88 @@ class FlowFall (app_manager.RyuApp) :
 
             mod = datapath.ofproto_parser.OFPFlowMod (
                 datapath = datapath, match = match, cookie = 0,
-                command = ofproto.OFPFC_ADD, idle_timeout = 10, 
+                command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
                 hard_timeout = 0, priority ofproto.OFP_DEFAULT_PRIORITY,
                 flags = None, actions = actions)
             datapath.send_msg (mod)
+
+            return
+
+        # check rule 3.
+        if ofs.is_from_downlink (in_port) :
+
+            key = ipv4_test_to_int (ip.src)
+            [to_port, mac] = ofs.get_port_mac (NON_UP, key)
+
+            # from downlink to uplink
+            match = datapath.ofproto_parserOFPMatch ()
+            match.set_vlan_vid (vlan.vid)
+            match.set_dl_type (vlan.ethertype)
+            match.set_ipv4_src (ip.src)
+            match.in_port = in_port
+
+            actions = [
+                datapath.ofproto_parser.OFPActionSetDlDst (haddr_to_bin (mac)),
+                datapath.ofproto_parser.OFPActionOutPut (to_port)
+                ]
+
+            mod = datapath.ofproto_parser.OFPFlowMod (
+                datapath = datapath, match = match, cookie = 0,
+                command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
+                hard_timeout = 0, priority ofproto.OFP_DEFAULT_PRIORITY,
+                flags = None, actions = actions)
+            datapath.send_msg (mod)
+
+
+            # from uplink to downlink
+            match = datapath.ofproto_parserOFPMatch ()
+            match.set_vlan_vid (vlan.vid)
+            match.set_dl_type (vlan.ethertype)
+            match.set_ipv4_dst (ip.src)
+            match.in_port = to_port
+
+            actions = [
+                datapath.ofproto_parser.OFPActionSetDlDst (eth.src),
+                datapath.ofproto_parser.OFPActionOutPut (in_port)
+                ]
+
+            mod = datapath.ofproto_parser.OFPFlowMod (
+                datapath = datapath, match = match, cookie = 0,
+                command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
+                hard_timeout = 0, priority ofproto.OFP_DEFAULT_PRIORITY,
+                flags = None, actions = actions)
+            datapath.send_msg (mod)
+
+            return
+
+
+        # check rule 4.
+        if ofs.is_from_uplink (in_port) :
+
+            key = ipv4_test_to_int (ip.dst)
+            [to_port, mac] = ofs.get_port_mac (NON_DOWN, key)
+
+            # from uplink to downlink
+            match = datapath.ofproto_parserOFPMatch ()
+            match.set_vlan_vid (vlan.vid)
+            match.set_dl_type (vlan.ethertype)
+            match.set_ipv4_dst (ip.dst)
+            match.in_port = in_port
+
+            actions = [
+                datapath.ofproto_parser.OFPActionSetDlDst (haddr_to_bin (mac)),
+                datapath.ofproto_parser.OFPActionOutPut (to_port)
+                ]
+
+            mod = datapath.ofproto_parser.OFPFlowMod (
+                datapath = datapath, match = match, cookie = 0,
+                command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
+                hard_timeout = 0, priority ofproto.OFP_DEFAULT_PRIORITY,
+                flags = None, actions = actions)
+            datapath.send_msg (mod)
+
+            return
+
+        # not reahced
+        print "packet-in: all rule is not matched !!"
+        return
