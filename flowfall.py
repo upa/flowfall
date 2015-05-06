@@ -79,11 +79,7 @@ class OFSwitch () :
     def __init__ (self, dpid) :
         self.dpid = dpid
 
-        self.ports = {}
-        self.ports[VNF_UP] = []
-        self.ports[VNF_DOWN] = []
-        self.ports[NON_UP] = []
-        self.ports[NON_DOWN] = []
+        self.vlans = {}
 
         self.uplink_ports = []
         self.downlink_ports = []
@@ -91,9 +87,24 @@ class OFSwitch () :
         return
 
 
-    def add_port (self, port_type, port) :
+    def add_vlan (self, vlan) :
+        if self.vlans.has_key (vlan) :
+            return
 
-        self.ports[port_type].append (port)
+        self.vlans[vlan] = {}
+        self.vlans[vlan][VNF_UP] = []
+        self.vlans[vlan][VNF_DOWN] = []
+        self.vlans[vlan][NON_UP] = []
+        self.vlans[vlan][NON_DOWN] = []
+        return
+
+    def add_port (self, vlan, port_type, port) :
+
+        if not self.vlans.has_key (vlan) :
+            print "invalid vlan id %d for dpid %d" % (vlan, self.dpid)
+            return
+
+        self.vlans[vlan][port_type].append (port)
 
         if port_type == VNF_UP or port_type == NON_UP :
             self.uplink_ports.append (port)
@@ -104,9 +115,12 @@ class OFSwitch () :
         return
 
 
-    def get_port (self, port_type, key) :
+    def get_port (self, vlan, port_type, key) :
 
-        portlist = self.ports[port_type]
+        if not self.vlans.has_key (vlan) :
+            print "invalid vlan id %d for dpid %d" % (vlan, self.dpid)
+
+        portlist = self.vlans[vlan][port_type]
 
         if not portlist :
             return None
@@ -114,9 +128,9 @@ class OFSwitch () :
         return self.portlist[key % len (self.portlist)]
 
 
-    def get_port_mac (self, port_type, key) :
+    def get_port_mac (self, vlan, port_type, key) :
 
-        port = self.get_port (port_type, key)
+        port = self.get_port (vlan, port_type, key)
 
         if not port :
             return None
@@ -169,29 +183,36 @@ class FlowFall (app_manager.RyuApp) :
 
             ofs = OFSwitch (switch["dpid"])
 
-            for vnfupport in switch["vnf_up_ports"] :
-                port = Port (port_num = vnfupport["port_num"])
-                for mac in vnfupport["mac"] :
-                    port.add_mac (mac)
-                ofs.add_port (VNF_UP, port)
+            for vlan in switch["vlan"].keys () :
 
-            for vnfdownport in switch["vnf_down_ports"] :
-                port = Port (port_num = vnfdownport["port_num"])
-                for mac in vnfdownport["mac"] :
-                    port.add_mac (mac)
-                ofs.add_port (VNF_DOWN, port)
+                print "install vlan id %d info" % vlan
 
-            for nonupport in switch["non_up_ports"] :
-                port = Port (port_num = nonupport["port_num"])
-                for mac in nonupport["mac"] :
-                    port.add_mac (mac)
-                ofs.add_port (NON_UP, port)
+                ofs.add_vlan (vlan)
+                vlanfdb = switch["vlan"][vlan]
 
-            for nondownport in switch["non_down_ports"] :
-                port = Port (port_num = nondownport["port_num"])
-                for mac in nondownport["mac"] :
-                    port.add_mac (mac)
-                ofs.add_port (NON_DOWN, port)
+                for vnfupport in vlanfdb["vnf_up_ports"] :
+                    port = Port (port_num = vnfupport["port_num"])
+                    for mac in vnfupport["mac"] :
+                        port.add_mac (mac)
+                        ofs.add_port (vlan, VNF_UP, port)
+
+                for vnfdownport in vlanfdb["vnf_down_ports"] :
+                    port = Port (port_num = vnfdownport["port_num"])
+                    for mac in vnfdownport["mac"] :
+                        port.add_mac (mac)
+                    ofs.add_port (vlan, VNF_DOWN, port)
+
+                for nonupport in vlanfdb["non_up_ports"] :
+                    port = Port (port_num = nonupport["port_num"])
+                    for mac in nonupport["mac"] :
+                        port.add_mac (mac)
+                    ofs.add_port (vlan, NON_UP, port)
+
+                for nondownport in vlanfdb["non_down_ports"] :
+                    port = Port (port_num = nondownport["port_num"])
+                    for mac in nondownport["mac"] :
+                        port.add_mac (mac)
+                    ofs.add_port (vlan, NON_DOWN, port)
 
             self.ofswitches.append (ofs)
 
@@ -292,10 +313,10 @@ class FlowFall (app_manager.RyuApp) :
 
             if ofs.is_from_uplink (in_port) :
                 # uplink to downlink
-                [to_port, mac] = ofs.get_port_mac (NON_DOWN, 1)
+                [to_port, mac] = ofs.get_port_mac (vlan.vid, NON_DOWN, 1)
             else :
                 # downlink to uplink
-                [to_port, mac] = ofs.get_port_mac (NON_UP, 1)
+                [to_port, mac] = ofs.get_port_mac (vlan.vid, NON_UP, 1)
 
             match = datapath.ofproto_parser.OFPMatch ()
             match.dl_vlan = vlan.vid
@@ -323,7 +344,7 @@ class FlowFall (app_manager.RyuApp) :
                 port_type = NON_UP
 
             key = ipv4_test_to_int (ip.src)
-            [to_port, mac] = ofs.get_port_mac (port_type, key)
+            [to_port, mac] = ofs.get_port_mac (vlan.vid, port_type, key)
 
             # from downlink to uplink
             match = datapath.ofproto_parser.OFPMatch ()
@@ -374,7 +395,7 @@ class FlowFall (app_manager.RyuApp) :
         if ofs.is_from_downlink (in_port) :
 
             key = ipv4_test_to_int (ip.src)
-            [to_port, mac] = ofs.get_port_mac (NON_UP, key)
+            [to_port, mac] = ofs.get_port_mac (vlan.vid, NON_UP, key)
 
             # from downlink to uplink
             match = datapath.ofproto_parserOFPMatch ()
@@ -424,7 +445,7 @@ class FlowFall (app_manager.RyuApp) :
         if ofs.is_from_uplink (in_port) :
 
             key = ipv4_test_to_int (ip.dst)
-            [to_port, mac] = ofs.get_port_mac (NON_DOWN, key)
+            [to_port, mac] = ofs.get_port_mac (vlan.vid, NON_DOWN, key)
 
             # from uplink to downlink
             match = datapath.ofproto_parserOFPMatch ()
