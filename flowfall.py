@@ -84,6 +84,8 @@ class OFSwitch () :
         self.uplink_ports = []
         self.downlink_ports = []
 
+        self.servicebit = False
+
         return
 
 
@@ -163,6 +165,10 @@ class OFSwitch () :
 
 
     def check_tos_vnf (self, tos) :
+        if not self.servicebit :
+            return False
+
+        # XXX: check ToS field
         return True
 
 
@@ -182,6 +188,7 @@ class FlowFall (app_manager.RyuApp) :
             print "install OFSwitch DPID:%d" % switch["dpid"]
 
             ofs = OFSwitch (switch["dpid"])
+            ofs.servicebit = switch["servicebit"]
 
             for vlan in switch["vlan"].keys () :
 
@@ -273,13 +280,13 @@ class FlowFall (app_manager.RyuApp) :
         2. check, is packet from CLIENT and downlink ports ?
             -> check ToS and decide uplink port
             -> set to uplink flow, and downlink flow (to in_port)
-                > uplink   : MATCH in_port, source IP and ToS
-                > downlink : MATCH in_port, destination IP
+                > uplink   : MATCH in_port, source IP and ToS, to to_port
+                > downlink : MATCH to_port, destination IP, to in_port
 
         3. check, is packet from NOT CLIENT and downlink ports ?
             -> set to NON-VNF uplink flow, and downlink flow (to in_port)
-                > uplink   : MATCH in_port, source IP
-                > downlink : MATCH in_port, destination IP
+                > uplink   : MATCH in_port, source IP, to to_port
+                > downlink : MATCH to_port, destination IP, to in_port
 
         4. check, is packet from uplink ports ?
             -> set to NON-VNF downlink flow with low priority
@@ -374,7 +381,6 @@ class FlowFall (app_manager.RyuApp) :
             match.dl_vlan = vlan.vid
             match.dl_type = vlan.ethertype
             match.nw_dst = ip.src
-            match.nw_tos = ip.tos
 
             actions = [
 
