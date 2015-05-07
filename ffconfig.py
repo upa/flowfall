@@ -11,6 +11,7 @@ ofswitches = [
                 "vnf_up_ports" : [
                     {
                         "port_num" : 49,
+                        "tagged" : False,
                         "mac" : [ "00:01:01:01:02:00", "00:01:01:01:02:01",
                                   "00:01:01:01:02:02", "00:01:01:01:02:03",
                                   "00:01:01:01:02:04", "00:01:01:01:02:05",
@@ -22,10 +23,12 @@ ofswitches = [
                 "vnf_down_ports" : [],
 
                 "non_up_ports" :
-                [ { "port_num" : 46, "mac" : [ "90:e2:ba:2c:e9:58" ] }, ],
+                [ { "port_num" : 46, "tagged" : True,
+                    "mac" : [ "90:e2:ba:2c:e9:58" ] }, ],
 
                 "non_down_ports" :
-                    [ { "port_num" : 52, "mac" : [ "90:e2:ba:2c:e9:58" ] }, ],
+                [ { "port_num" : 52, "tagged" : True,
+                    "mac" : [ "90:e2:ba:2c:e9:58" ] }, ],
 
                 },
             }
@@ -41,6 +44,7 @@ ofswitches = [
                 "vnf_down_ports" : [
                     {
                         "port_num" : 50,
+                        "tagged" : False,
                         "mac" : [ "00:01:01:01:01:00", "00:01:01:01:01:01",
                                   "00:01:01:01:01:02", "00:01:01:01:01:03",
                                   "00:01:01:01:01:04", "00:01:01:01:01:05",
@@ -50,10 +54,12 @@ ofswitches = [
                     ],
 
                 "non_up_ports" :
-                    [ { "port_num" : 3, "mac" : [ "00:01:01:01:02:00" ] }, ],
+                    [ { "port_num" : 3, "tagged" : True,
+                        "mac" : [ "00:01:01:01:02:00" ] }, ],
 
                 "non_down_ports" :
-                    [ { "port_num" : 47, "mac" : [ "90:e2:ba:2c:e9:58" ] }, ],
+                    [ { "port_num" : 47, "tagged" : True,
+                        "mac" : [ "90:e2:ba:2c:e9:58" ] }, ],
 
                 },
             }
