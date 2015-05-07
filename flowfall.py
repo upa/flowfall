@@ -106,7 +106,7 @@ class OFSwitch () :
 
         if not self.vlans.has_key (vlan) :
             print "invalid vlan id %d for dpid %d" % (vlan, self.dpid)
-            return
+            return False
 
         self.vlans[vlan][port_type].append (port)
 
@@ -123,13 +123,14 @@ class OFSwitch () :
 
         if not self.vlans.has_key (vlan) :
             print "invalid vlan id %d for dpid %d" % (vlan, self.dpid)
+            return False
 
         portlist = self.vlans[vlan][port_type]
 
         if not portlist :
             return None
 
-        return self.portlist[key % len (self.portlist)]
+        return portlist[key % len (portlist)]
 
 
     def get_port_mac (self, vlan, port_type, key) :
@@ -156,13 +157,13 @@ class OFSwitch () :
 
     def is_from_downlink (self, port_num) :
 
-        if is_from_uplink (port_num) :
+        if self.is_from_uplink (port_num) :
             return False
 
         return True
 
 
-    def get_port (self, port_num) :
+    def find_port (self, port_num) :
 
         for port in self.uplink_ports :
             if port.port_num == port_num :
@@ -176,7 +177,7 @@ class OFSwitch () :
 
     def get_vlan_of_port (self, port_num) :
 
-        port = self.get_port (port_num)
+        port = self.find_port (port_num)
         if not port :
             return False
         return port.vlan
@@ -319,8 +320,9 @@ class FlowFall (app_manager.RyuApp) :
         """
 
         msg = ev.msg
-        dpid = ev.dp.id
+        dpid = msg.datapath.id
         datapath = msg.datapath
+        ofproto = datapath.ofproto
 
         ofs = self.find_ofs (dpid)
         if not ofs :
@@ -330,6 +332,11 @@ class FlowFall (app_manager.RyuApp) :
         pkt = packet.Packet (msg.data)
         in_port = msg.in_port
         eth = pkt.get_protocol (ethernet.ethernet)
+
+        if not ofs.find_port (in_port) :
+            print "Packet-in from not configured port %d on DPID %d" \
+                % (in_port, dpid)
+            return
 
         if eth.ethertype == ether.ETH_TYPE_8021Q :
             is_tagged_packet = True
@@ -343,8 +350,8 @@ class FlowFall (app_manager.RyuApp) :
 
 
         def prepare_vlan_action (dp, ofs, in_port_num, to_port_num) :
-            in_port = ofs.get_port (in_port_num)
-            to_port = ofs.get_port (to_port_num)
+            in_port = ofs.find_port (in_port_num)
+            to_port = ofs.find_port (to_port_num)
 
             if in_port.tagged and not to_port.tagged :
                 # strip vlan
@@ -358,7 +365,7 @@ class FlowFall (app_manager.RyuApp) :
 
 
         # check rule 1.
-        if not ethertype != ether.ETH_TYPE_IP :
+        if ethertype != ether.ETH_TYPE_IP :
 
             if ofs.is_from_uplink (in_port) :
                 # uplink to downlink
@@ -372,7 +379,7 @@ class FlowFall (app_manager.RyuApp) :
             match.in_port = in_port
 
             act = prepare_vlan_action (datapath, ofs, in_port, to_port)
-            act.append (datapath.ofproto_parser.OFPActionOutPut (to_port))
+            act.append (datapath.ofproto_parser.OFPActionOutput (to_port))
 
             mod = datapath.ofproto_parser.OFPFlowMod (
                 datapath = datapath, match = match, cookie = 0,
@@ -385,7 +392,7 @@ class FlowFall (app_manager.RyuApp) :
 
         # check rule 2.
         ip = pkt.get_protocol (ipv4.ipv4)
-        if ofs.is_from_downlink (in_port) and self.is_from_client (ip.ip_src) :
+        if ofs.is_from_downlink (in_port) and self.is_from_client (ip.src) :
 
             if ofs.check_tos_vnf (ip.tos) :
                 port_type = VNF_UP
@@ -402,11 +409,11 @@ class FlowFall (app_manager.RyuApp) :
             match.nw_src = ipv4_text_to_int (ip.src)
             match.nw_tos = ip.tos
 
-            dmac = haddr_to_bin (mac)
+            bmac = haddr_to_bin (mac)
 
             act = prepare_vlan_action (datapath, ofs, in_port, to_port)
             act.append (datapath.ofproto_parser.OFPActionSetDlDst (bmac))
-            act.append (datapath.ofproto_parser.OFPActionOutPut (to_port))
+            act.append (datapath.ofproto_parser.OFPActionOutput (to_port))
 
             mod = datapath.ofproto_parser.OFPFlowMod (
                 datapath = datapath, match = match, cookie = 0,
@@ -422,11 +429,11 @@ class FlowFall (app_manager.RyuApp) :
             match.dl_type = ethertype
             match.nw_dst = ipv4_text_to_int (ip.src)
 
-            smac = haddt_to_bin (eth.src)
+            bmac = haddt_to_bin (eth.src)
 
             act = prepare_vlan_action (datapath, ofs, to_port, in_port)
-            act.append (datapath.ofproto_parser.OFPActionSetDlDst (eth.smac))
-            act.append (datapath.ofproto_parser.OFPActionOutPut (in_port))
+            act.append (datapath.ofproto_parser.OFPActionSetDlDst (bmac))
+            act.append (datapath.ofproto_parser.OFPActionOutput (in_port))
 
             mod = datapath.ofproto_parser.OFPFlowMod (
                 datapath = datapath, match = match, cookie = 0,
@@ -444,16 +451,16 @@ class FlowFall (app_manager.RyuApp) :
             [to_port, mac] = ofs.get_port_mac (vlan, NON_UP, key)
 
             # from downlink to uplink
-            match = datapath.ofproto_parserOFPMatch ()
+            match = datapath.ofproto_parser.OFPMatch ()
             match.in_port = in_port
             match.dl_type = ethertype
             match.nw_src = ipv4_text_to_int (ip.src)
 
-            dmac = haddr_to_bin (dmac)
+            bmac = haddr_to_bin (mac)
 
             act = prepare_vlan_action (datapath, ofs, in_port, to_port)
-            act.append (datapath.ofproto_parser.OFPActionSetDlDst (dmac))
-            act.append (datapath.ofproto_parser.OFPActionOutPut (to_port))
+            act.append (datapath.ofproto_parser.OFPActionSetDlDst (bmac))
+            act.append (datapath.ofproto_parser.OFPActionOutput (to_port))
 
             mod = datapath.ofproto_parser.OFPFlowMod (
                 datapath = datapath, match = match, cookie = 0,
@@ -469,11 +476,11 @@ class FlowFall (app_manager.RyuApp) :
             match.dl_type = ethertype
             match.nw_dst = ipv4_text_to_int (ip.src)
 
-            smac = haddr_to_bin (eth.src)
+            bmac = haddr_to_bin (eth.src)
 
             act = prepare_vlan_action (datapath, ofs, to_port, in_port)
-            act.append (datapath.ofproto_parser.OFPActionSetDlDst (smac))
-            act.append (datapath.ofproto_parser.OFPActionOutPut (in_port))
+            act.append (datapath.ofproto_parser.OFPActionSetDlDst (bmac))
+            act.append (datapath.ofproto_parser.OFPActionOutput (in_port))
 
             mod = datapath.ofproto_parser.OFPFlowMod (
                 datapath = datapath, match = match, cookie = 0,
@@ -497,11 +504,11 @@ class FlowFall (app_manager.RyuApp) :
             match.dl_type = ethertype
             match.nw_src = ipv4_text_to_int (ip.dst)
 
-            dmac = haddr_to_bin (mac)
+            bmac = haddr_to_bin (mac)
 
             act = prepare_vlan_action (datapath, ofs, in_port, to_port)
-            act.append (datapath.ofproto_parser.OFPActionSetDlDst (dmac))
-            act.append (datapath.ofproto_parser.OFPActionOutPut (to_port))
+            act.append (datapath.ofproto_parser.OFPActionSetDlDst (bmac))
+            act.append (datapath.ofproto_parser.OFPActionOutput (to_port))
 
             mod = datapath.ofproto_parser.OFPFlowMod (
                 datapath = datapath, match = match, cookie = 0,

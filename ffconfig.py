@@ -23,11 +23,11 @@ ofswitches = [
                 "vnf_down_ports" : [],
 
                 "non_up_ports" :
-                [ { "port_num" : 46, "tagged" : True,
+                [ { "port_num" : 50, "tagged" : True,
                     "mac" : [ "90:e2:ba:2c:e9:58" ] }, ],
 
                 "non_down_ports" :
-                [ { "port_num" : 52, "tagged" : True,
+                [ { "port_num" : 51, "tagged" : False,
                     "mac" : [ "90:e2:ba:2c:e9:58" ] }, ],
 
                 },
