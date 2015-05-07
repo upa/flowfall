@@ -324,6 +324,8 @@ class FlowFall (app_manager.RyuApp) :
         datapath = msg.datapath
         ofproto = datapath.ofproto
 
+        print "packet in from DPID %d" % dpid
+
         ofs = self.find_ofs (dpid)
         if not ofs :
             print "Switch DPID %d is not found !!" % dpid
@@ -355,7 +357,7 @@ class FlowFall (app_manager.RyuApp) :
 
             if in_port.tagged and not to_port.tagged :
                 # strip vlan
-                return [dp.ofproto_parser.OFPActionStripVlan]
+                return [dp.ofproto_parser.OFPActionStripVlan ()]
 
             if not in_port.tagged and to_port.tagged :
                 # add vlan
@@ -365,6 +367,7 @@ class FlowFall (app_manager.RyuApp) :
 
 
         # check rule 1.
+        print "rule 1"
         if ethertype != ether.ETH_TYPE_IP :
 
             if ofs.is_from_uplink (in_port) :
@@ -374,9 +377,9 @@ class FlowFall (app_manager.RyuApp) :
                 # downlink to uplink
                 [to_port, mac] = ofs.get_port_mac (vlan, NON_UP, 1)
 
-            match = datapath.ofproto_parser.OFPMatch ()
-            match.dl_type = ethertype
-            match.in_port = in_port
+            match = datapath.ofproto_parser.OFPMatch (
+                dl_type = ethertype,
+                in_port = in_port)
 
             act = prepare_vlan_action (datapath, ofs, in_port, to_port)
             act.append (datapath.ofproto_parser.OFPActionOutput (to_port))
@@ -385,12 +388,13 @@ class FlowFall (app_manager.RyuApp) :
                 datapath = datapath, match = match, cookie = 0,
                 command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
                 hard_timeout = 0, priority = ofproto.OFP_DEFAULT_PRIORITY,
-                flags = None, actions = act)
+                flags = 0, actions = act)
             datapath.send_msg (mod)
             return
 
 
         # check rule 2.
+        print "rule 2"
         ip = pkt.get_protocol (ipv4.ipv4)
         if ofs.is_from_downlink (in_port) and self.is_from_client (ip.src) :
 
@@ -403,11 +407,11 @@ class FlowFall (app_manager.RyuApp) :
             [to_port, mac] = ofs.get_port_mac (vlan, port_type, key)
 
             # from downlink to uplink
-            match = datapath.ofproto_parser.OFPMatch ()
-            match.in_port = in_port
-            match.dl_type = ethertype
-            match.nw_src = ipv4_text_to_int (ip.src)
-            match.nw_tos = ip.tos
+            match = datapath.ofproto_parser.OFPMatch (
+                in_port = in_port,
+                dl_type = ethertype,
+                nw_src = ipv4_text_to_int (ip.src),
+                nw_tos = ip.tos)
 
             bmac = haddr_to_bin (mac)
 
@@ -419,15 +423,15 @@ class FlowFall (app_manager.RyuApp) :
                 datapath = datapath, match = match, cookie = 0,
                 command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
                 hard_timeout = 0, priority = ofproto.OFP_DEFAULT_PRIORITY,
-                flags = None, actions = act)
+                flags = 0, actions = act)
             datapath.send_msg (mod)
 
 
             # from uplink to downlink
-            match = datapath.ofproto_parser.OFPMatch ()
-            match.in_port = to_port
-            match.dl_type = ethertype
-            match.nw_dst = ipv4_text_to_int (ip.src)
+            match = datapath.ofproto_parser.OFPMatch (
+                in_port = to_port,
+                dl_type = ethertype,
+                nw_dst = ipv4_text_to_int (ip.src))
 
             bmac = haddt_to_bin (eth.src)
 
@@ -439,22 +443,23 @@ class FlowFall (app_manager.RyuApp) :
                 datapath = datapath, match = match, cookie = 0,
                 command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
                 hard_timeout = 0, priority = ofproto.OFP_DEFAULT_PRIORITY,
-                flags = None, actions = act)
+                flags = 0, actions = act)
             datapath.send_msg (mod)
 
             return
 
         # check rule 3.
+        print "rule 3"
         if ofs.is_from_downlink (in_port) :
 
             key = ipv4_text_to_int (ip.src)
             [to_port, mac] = ofs.get_port_mac (vlan, NON_UP, key)
 
             # from downlink to uplink
-            match = datapath.ofproto_parser.OFPMatch ()
-            match.in_port = in_port
-            match.dl_type = ethertype
-            match.nw_src = ipv4_text_to_int (ip.src)
+            match = datapath.ofproto_parser.OFPMatch (
+                in_port = in_port,
+                dl_type = ethertype,
+                nw_src = ipv4_text_to_int (ip.src))
 
             bmac = haddr_to_bin (mac)
 
@@ -466,15 +471,15 @@ class FlowFall (app_manager.RyuApp) :
                 datapath = datapath, match = match, cookie = 0,
                 command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
                 hard_timeout = 0, priority = ofproto.OFP_DEFAULT_PRIORITY,
-                flags = None, actions = act)
+                flags = 0, actions = act)
             datapath.send_msg (mod)
 
 
             # from uplink to downlink
-            match = datapath.ofproto_parserOFPMatch ()
-            match.in_port = to_port
-            match.dl_type = ethertype
-            match.nw_dst = ipv4_text_to_int (ip.src)
+            match = datapath.ofproto_parser.OFPMatch (
+                in_port = to_port,
+                dl_type = ethertype,
+                nw_dst = ipv4_text_to_int (ip.src))
 
             bmac = haddr_to_bin (eth.src)
 
@@ -486,23 +491,24 @@ class FlowFall (app_manager.RyuApp) :
                 datapath = datapath, match = match, cookie = 0,
                 command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
                 hard_timeout = 0, priority = ofproto.OFP_DEFAULT_PRIORITY,
-                flags = None, actions = act)
+                flags = 0, actions = act)
             datapath.send_msg (mod)
 
             return
 
 
         # check rule 4.
+        print "rule 4"
         if ofs.is_from_uplink (in_port) :
 
             key = ipv4_text_to_int (ip.dst)
             [to_port, mac] = ofs.get_port_mac (vlan, NON_DOWN, key)
 
             # from uplink to downlink
-            match = datapath.ofproto_parserOFPMatch ()
-            match.in_port = in_port
-            match.dl_type = ethertype
-            match.nw_src = ipv4_text_to_int (ip.dst)
+            match = datapath.ofproto_parser.OFPMatch (
+                in_port = in_port
+                dl_type = ethertype
+                nw_src = ipv4_text_to_int (ip.dst))
 
             bmac = haddr_to_bin (mac)
 
@@ -514,7 +520,7 @@ class FlowFall (app_manager.RyuApp) :
                 datapath = datapath, match = match, cookie = 0,
                 command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
                 hard_timeout = 0, priority = ofproto.OFP_DEFAULT_PRIORITY,
-                flags = None, actions = act)
+                flags = 0, actions = act)
             datapath.send_msg (mod)
 
             return
