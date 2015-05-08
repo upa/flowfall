@@ -574,7 +574,7 @@ class FlowFall (app_manager.RyuApp) :
             match = datapath.ofproto_parser.OFPMatch (
                 in_port = in_port,
                 dl_type = ethertype,
-                nw_src = ipv4_text_to_int (ip.dst))
+                nw_dst = ipv4_text_to_int (ip.dst))
 
             bmac = haddr_to_bin (mac)
 
