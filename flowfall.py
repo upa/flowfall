@@ -21,7 +21,7 @@ from ryu.lib.mac import haddr_to_bin, haddr_to_str
 from ryu.lib.ip import ipv4_to_bin, ipv4_to_str
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
-from ryu.lib.packet import vlan
+from ryu.lib.packet import vlan as packetvlan
 from ryu.lib.packet import ipv4
 
 import ffconfig
@@ -41,7 +41,7 @@ def ipv4_text_to_int(ip_text):
 
 
 # static variables
-IDLE_TIMEOUT = 30
+IDLE_TIMEOUT = 5
 
 
 # port_type
@@ -49,6 +49,45 @@ VNF_UP   = 0 # to vnf uplink port
 VNF_DOWN = 1 # to vnf downlink port
 NON_UP   = 2 # pass uplink port
 NON_DOWN = 3 # pass downlink port
+
+
+class FFLog () :
+    def __init__ (self, use_stdout = True) :
+        self.use_stdout = use_stdout
+        self.progname = "flowfall"
+        return
+
+    def output_msg (self, level, msg) :
+        msgout = "%s %s %s" % (self.progname, level, msg)
+
+        if self.use_stdout :
+            print msgout
+        else :
+            if level == "info" :
+                logging.info (msgout)
+            elif level == "warn" :
+                logging.warning (msgout)
+            elif level == "err" :
+                logging.error (msgout)
+            elif level == "debug" :
+                logging.debug (msgout)
+        return
+
+    def info (self, msg) :
+        self.output_msg ("info", msg)
+        return
+
+    def warn (self, msg) :
+        self.output_msg ("warn", msg)
+        return
+
+    def err (self, msg) :
+        self.output_msg ("err", msg)
+        return
+
+    def debug (self, msg) :
+        self.output_msg ("debug", msg)
+        return
 
 
 class Port () :
@@ -75,6 +114,8 @@ class Port () :
         return self.maclist[key % len (self.maclist)]
 
 
+    def __repr__ (self) :
+        return "%d" % self.port_num
 
 
 class OFSwitch () :
@@ -198,20 +239,24 @@ class FlowFall (app_manager.RyuApp) :
 
     def __init__ (self, *args, **kwargs) :
         super (FlowFall, self).__init__ (*args, **kwargs)
-        print "FlowFall is now starting"
+
+        self.log = FFLog ()
+
+        self.log.info ("Flowfall is now starting")
+
 
         # convert ffconfig.ofswitches to self.ofswitches (OFSwitch Class)
         self.ofswitches = []
 
         for switch in ffconfig.ofswitches :
-            print "install OFSwitch DPID:%d" % switch["dpid"]
+            self.log.info ("install OFSwitch DPID:%d" % switch["dpid"])
 
             ofs = OFSwitch (switch["dpid"])
             ofs.servicebit = switch["servicebit"]
 
             for vlan in switch["vlan"].keys () :
 
-                print "install vlan id %d info" % vlan
+                self.log.info ("install vlan id %d info" % vlan)
 
                 ofs.add_vlan (vlan)
                 vlanfdb = switch["vlan"][vlan]
@@ -221,7 +266,7 @@ class FlowFall (app_manager.RyuApp) :
                     port.tagged = vnfupport["tagged"]
                     for mac in vnfupport["mac"] :
                         port.add_mac (mac)
-                        ofs.add_port (vlan, VNF_UP, port)
+                    ofs.add_port (vlan, VNF_UP, port)
 
                 for vnfdownport in vlanfdb["vnf_down_ports"] :
                     port = Port (vnfdownport["port_num"], vlan)
@@ -245,19 +290,23 @@ class FlowFall (app_manager.RyuApp) :
                     ofs.add_port (vlan, NON_DOWN, port)
 
             self.ofswitches.append (ofs)
-
+            self.log.info ("DPID %d uplink=%s, downlink=%s" % 
+                           (ofs.dpid, ofs.uplink_ports, ofs.downlink_ports))
 
         # convert ffconfig.prefixes to self.rtree (Radix Class)
         self.rtree = radix.Radix ()
 
         for prefix in ffconfig.prefixes :
-            print "install prefix %s" % prefix["prefix"]
+            self.log.info ("install prefix %s" % prefix["prefix"])
 
             rnode = self.rtree.add (prefix["prefix"])
             rnode.data["type"] = prefix["type"]
 
 
+        self.log.info ("initialization finished.")
+
         return
+
 
     def find_ofs (self, dpid) :
         for ofs in self.ofswitches :
@@ -267,15 +316,16 @@ class FlowFall (app_manager.RyuApp) :
 
 
     def is_from_client (self, ipaddr) :
-        rnode = self.rtree.search_best (ipaddr)
+
+        rnode = self.rtree.search_best (str (ipaddr))
 
         if not rnode :
             return False
 
-        if rnode.data["type"] != "CLIENT" :
+        if rnode.data["type"] == "CLIENT" :
             return False
 
-        return True
+        return False
 
 
     @set_ev_cls (dpset.EventDP)
@@ -324,11 +374,9 @@ class FlowFall (app_manager.RyuApp) :
         datapath = msg.datapath
         ofproto = datapath.ofproto
 
-        print "packet in from DPID %d" % dpid
-
         ofs = self.find_ofs (dpid)
         if not ofs :
-            print "Switch DPID %d is not found !!" % dpid
+            self.log.warn ("Switch DPID %d is not found !!" % dpid)
             return
 
         pkt = packet.Packet (msg.data)
@@ -336,13 +384,13 @@ class FlowFall (app_manager.RyuApp) :
         eth = pkt.get_protocol (ethernet.ethernet)
 
         if not ofs.find_port (in_port) :
-            print "Packet-in from not configured port %d on DPID %d" \
-                % (in_port, dpid)
+            self.log.warn ("Packet-in from not configured port %d on DPID %d."
+                           % (in_port, dpid))
             return
 
         if eth.ethertype == ether.ETH_TYPE_8021Q :
             is_tagged_packet = True
-            vlanpkt = pkt.get_protocol (vlan.vlan)
+            vlanpkt = pkt.get_protocol (packetvlan.vlan)
             vlan = vlanpkt.vid
             ethertype = vlanpkt.ethertype
         else :
@@ -367,8 +415,10 @@ class FlowFall (app_manager.RyuApp) :
 
 
         # check rule 1.
-        print "rule 1"
         if ethertype != ether.ETH_TYPE_IP :
+
+            self.log.info ("packet-in : not ETHER_TYPE_IP packet on DPID %d" %
+                           dpid)
 
             if ofs.is_from_uplink (in_port) :
                 # uplink to downlink
@@ -390,13 +440,19 @@ class FlowFall (app_manager.RyuApp) :
                 hard_timeout = 0, priority = ofproto.OFP_DEFAULT_PRIORITY,
                 flags = 0, actions = act)
             datapath.send_msg (mod)
+
             return
 
 
-        # check rule 2.
-        print "rule 2"
         ip = pkt.get_protocol (ipv4.ipv4)
+        self.log.debug ("packet-in : from %s to %s on DPID %d port %d" % 
+                        (ip.src, ip.dst, dpid, in_port))
+
+
+        # check rule 2.
         if ofs.is_from_downlink (in_port) and self.is_from_client (ip.src) :
+
+            self.log.info ("packet-in : from CLIENT prefix via downlink.")
 
             if ofs.check_tos_vnf (ip.tos) :
                 port_type = VNF_UP
@@ -424,7 +480,9 @@ class FlowFall (app_manager.RyuApp) :
                 command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
                 hard_timeout = 0, priority = ofproto.OFP_DEFAULT_PRIORITY,
                 flags = 0, actions = act)
+
             datapath.send_msg (mod)
+            self.log.info ("flow-mod : send \"to uplink flow\".")
 
 
             # from uplink to downlink
@@ -433,7 +491,7 @@ class FlowFall (app_manager.RyuApp) :
                 dl_type = ethertype,
                 nw_dst = ipv4_text_to_int (ip.src))
 
-            bmac = haddt_to_bin (eth.src)
+            bmac = haddr_to_bin (eth.src)
 
             act = prepare_vlan_action (datapath, ofs, to_port, in_port)
             act.append (datapath.ofproto_parser.OFPActionSetDlDst (bmac))
@@ -444,13 +502,16 @@ class FlowFall (app_manager.RyuApp) :
                 command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
                 hard_timeout = 0, priority = ofproto.OFP_DEFAULT_PRIORITY,
                 flags = 0, actions = act)
+
             datapath.send_msg (mod)
+            self.log.info ("flow-mod : send \"to downlink flow\".")
 
             return
 
         # check rule 3.
-        print "rule 3"
         if ofs.is_from_downlink (in_port) :
+
+            self.log.info ("packet-in : from NOT CLIENT via downlink.")
 
             key = ipv4_text_to_int (ip.src)
             [to_port, mac] = ofs.get_port_mac (vlan, NON_UP, key)
@@ -472,7 +533,9 @@ class FlowFall (app_manager.RyuApp) :
                 command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
                 hard_timeout = 0, priority = ofproto.OFP_DEFAULT_PRIORITY,
                 flags = 0, actions = act)
+
             datapath.send_msg (mod)
+            self.log.info ("flow-mod : send \"to uplink flow\".")
 
 
             # from uplink to downlink
@@ -492,22 +555,25 @@ class FlowFall (app_manager.RyuApp) :
                 command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
                 hard_timeout = 0, priority = ofproto.OFP_DEFAULT_PRIORITY,
                 flags = 0, actions = act)
+
             datapath.send_msg (mod)
+            self.log.info ("flow-mod : send \"to downlink flow\".")
 
             return
 
 
         # check rule 4.
-        print "rule 4"
         if ofs.is_from_uplink (in_port) :
+
+            self.log.info ("packet-in : via uplink.")
 
             key = ipv4_text_to_int (ip.dst)
             [to_port, mac] = ofs.get_port_mac (vlan, NON_DOWN, key)
 
             # from uplink to downlink
             match = datapath.ofproto_parser.OFPMatch (
-                in_port = in_port
-                dl_type = ethertype
+                in_port = in_port,
+                dl_type = ethertype,
                 nw_src = ipv4_text_to_int (ip.dst))
 
             bmac = haddr_to_bin (mac)
@@ -521,10 +587,13 @@ class FlowFall (app_manager.RyuApp) :
                 command = ofproto.OFPFC_ADD, idle_timeout = IDLE_TIMEOUT,
                 hard_timeout = 0, priority = ofproto.OFP_DEFAULT_PRIORITY,
                 flags = 0, actions = act)
+
             datapath.send_msg (mod)
+            self.log.info ("flow-mod : send \"to downlink flow\".")
 
             return
 
         # not reahced
-        print "packet-in: all rule is not matched !!"
+        self.log.err ("packet-in: all rule is not matched " + 
+                      "from %s to %s on DPID %d !!" % (ip.src, ip.dst, dpid))
         return
