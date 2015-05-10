@@ -429,8 +429,10 @@ class FlowFall (app_manager.RyuApp) :
         # check rule 1.
         if ethertype != ether.ETH_TYPE_IP :
 
-            self.log.info ("packet-in : not ETHER_TYPE_IP packet on DPID %d" %
-                           dpid)
+            self.log.debug ("packet-in : from %s to %s on DPID %d port %d" %
+                            (eth.src, eth.dst, dpid, in_port))
+
+            self.log.info ("Rule 1 : not ETHER_TYPE_IP packet")
 
             if ofs.is_from_uplink (in_port) :
                 # uplink to downlink
@@ -453,18 +455,21 @@ class FlowFall (app_manager.RyuApp) :
                 flags = 0, actions = act)
             datapath.send_msg (mod)
 
+            self.log.info ("FlowMod 0x%x in_port %d to_port %d DPID %d" %
+                           (ethertype, in_port, to_port, dpid))
+
             return
 
 
         ip = pkt.get_protocol (ipv4.ipv4)
-        self.log.debug ("packet-in : from %s to %s on DPID %4d port %d" % 
+        self.log.debug ("packet-in : from %s to %s on DPID %d port %d" %
                         (ip.src, ip.dst, dpid, in_port))
 
 
         # check rule 2.
         if ofs.is_from_downlink (in_port) and self.is_from_client (ip.src) :
 
-            self.log.info ("packet-in : from CLIENT prefix via downlink.")
+            self.log.info ("Rule 2 : from CLIENT prefix via downlink.")
 
             if ofs.check_tos_vnf (ip.tos) :
                 port_type = VNF_UP
@@ -494,7 +499,8 @@ class FlowFall (app_manager.RyuApp) :
                 flags = 0, actions = act)
 
             datapath.send_msg (mod)
-            self.log.info ("flow-mod : send \"to uplink flow\".")
+            self.log.info ("FlowMod %s->Any in_port %d to_port %d DPID %d"
+                           % (ip.src, in_port, to_port, dpid))
 
 
             # from uplink to downlink
@@ -516,14 +522,16 @@ class FlowFall (app_manager.RyuApp) :
                 flags = 0, actions = act)
 
             datapath.send_msg (mod)
-            self.log.info ("flow-mod : send \"to downlink flow\".")
+            self.log.info ("FlowMod Any->%s in_port %d to_port %d DPID %d"
+                           % (ip.src, to_port, in_port, dpid))
 
             return
+
 
         # check rule 3.
         if ofs.is_from_downlink (in_port) :
 
-            self.log.info ("packet-in : from NOT CLIENT via downlink.")
+            self.log.info ("Rule 3: from NOT CLIENT via downlink.")
 
             key = ipv4_text_to_int (ip.src)
             [to_port, mac] = ofs.get_port_mac (vlan, NON_UP, key)
@@ -547,7 +555,8 @@ class FlowFall (app_manager.RyuApp) :
                 flags = 0, actions = act)
 
             datapath.send_msg (mod)
-            self.log.info ("flow-mod : send \"to uplink flow\".")
+            self.log.info ("FlowMod %s->Any in_port %d to_port %d DPID %d"
+                           % (ip.src, in_port, to_port, dpid))
 
 
             # from uplink to downlink
@@ -569,7 +578,8 @@ class FlowFall (app_manager.RyuApp) :
                 flags = 0, actions = act)
 
             datapath.send_msg (mod)
-            self.log.info ("flow-mod : send \"to downlink flow\".")
+            self.log.info ("FlowMod Any->%s in_port %d to_port %d DPID %d"
+                           % (ip.src, to_port, in_port, dpid))
 
             return
 
@@ -577,7 +587,7 @@ class FlowFall (app_manager.RyuApp) :
         # check rule 4.
         if ofs.is_from_uplink (in_port) :
 
-            self.log.info ("packet-in : via uplink.")
+            self.log.info ("Rule 4 : from uplink.")
 
             key = ipv4_text_to_int (ip.dst)
             [to_port, mac] = ofs.get_port_mac (vlan, NON_DOWN, key)
@@ -603,9 +613,12 @@ class FlowFall (app_manager.RyuApp) :
             datapath.send_msg (mod)
             self.log.info ("flow-mod : send \"to downlink flow\".")
 
+            self.log.info ("FlowMod Any->%s in_port %d to_port %d DPID %d"
+                           % (ip.dst, in_port, to_port, dpid))
+
             return
 
         # not reahced
-        self.log.err ("packet-in: all rule is not matched " + 
+        self.log.err ("All rule is not matched " +
                       "from %s to %s on DPID %d !!" % (ip.src, ip.dst, dpid))
         return
