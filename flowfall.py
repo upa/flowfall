@@ -226,21 +226,18 @@ class OFSwitch () :
 
     def check_tos_vnf (self, tos) :
 
-        # XXX: terrible...
-
         if not self.servicebit :
             return False
 
-        b4 = int (math.floor (tos / 8))
-        tos -= b4 * 8
-        b3 = int (math.floor (tos / 4))
-        tos -= b3 * 4
-        b2 = int (math.floor (tos / 2))
-        tos -= b2 * 2
-        b1 = int (math.floor (tos / 1))
+        bitlist = [ 0, 0, 0, 0, 0, 0, 0, 0 ]
 
-        bitlist = [b1, b2, b3, b4]
-        print bitlist
+        bitrange = range (8)
+        bitrange.reverse ()
+
+        for x in bitrange :
+            b = int (math.floor (tos / (2 ** x)))
+            bitlist[x] = b
+            tos -= b * (2 ** x)
 
         if bitlist[self.servicebit - 1] :
             return True

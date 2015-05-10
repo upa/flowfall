@@ -5,7 +5,7 @@
 ofswitches = [
     {
         "dpid" : 1,
-        "servicebit" : 2,
+        "servicebit" : 3,
         "vlan" : {
             115 : {
                 "vnf_up_ports" : [
