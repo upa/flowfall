@@ -2,6 +2,7 @@
 #    FlowFall Controller
 #
 
+import math
 import types
 import logging
 import struct
@@ -119,15 +120,14 @@ class Port () :
 
 
 class OFSwitch () :
-    def __init__ (self, dpid) :
+    def __init__ (self, dpid, servicebit) :
         self.dpid = dpid
+        self.servicebit = servicebit
 
         self.vlans = {}
 
         self.uplink_ports = []
         self.downlink_ports = []
-
-        self.servicebit = False
 
         return
 
@@ -225,11 +225,27 @@ class OFSwitch () :
 
 
     def check_tos_vnf (self, tos) :
+
+        # XXX: terrible...
+
         if not self.servicebit :
             return False
 
-        # XXX: check ToS field
-        return True
+        b4 = int (math.floor (tos / 8))
+        tos -= b4 * 8
+        b3 = int (math.floor (tos / 4))
+        tos -= b3 * 4
+        b2 = int (math.floor (tos / 2))
+        tos -= b2 * 2
+        b1 = int (math.floor (tos / 1))
+
+        bitlist = [b1, b2, b3, b4]
+        print bitlist
+
+        if bitlist[self.servicebit - 1] :
+            return True
+
+        return False
 
 
 class FlowFall (app_manager.RyuApp) :
@@ -251,8 +267,7 @@ class FlowFall (app_manager.RyuApp) :
         for switch in ffconfig.ofswitches :
             self.log.info ("install OFSwitch DPID:%d" % switch["dpid"])
 
-            ofs = OFSwitch (switch["dpid"])
-            ofs.servicebit = switch["servicebit"]
+            ofs = OFSwitch (switch["dpid"], switch["servicebit"])
 
             for vlan in switch["vlan"].keys () :
 
@@ -323,7 +338,7 @@ class FlowFall (app_manager.RyuApp) :
             return False
 
         if rnode.data["type"] == "CLIENT" :
-            return False
+            return True
 
         return False
 
@@ -445,7 +460,7 @@ class FlowFall (app_manager.RyuApp) :
 
 
         ip = pkt.get_protocol (ipv4.ipv4)
-        self.log.debug ("packet-in : from %s to %s on DPID %d port %d" % 
+        self.log.debug ("packet-in : from %s to %s on DPID %4d port %d" % 
                         (ip.src, ip.dst, dpid, in_port))
 
 
