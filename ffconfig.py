@@ -32,7 +32,7 @@ ofswitches = [
             }
         },
     {
-        "dpid" : 281474976710658,
+        "dpid" : 2,
         "servicebit" : False,
         "vlan" : {
             115 : {
@@ -41,7 +41,7 @@ ofswitches = [
 
                 "vnf_down_ports" : [
                     {
-                        "port_num" : 49,
+                        "port_num" : 66,
                         "tagged" : False,
                         "mac" : [ "00:01:01:01:01:00", "00:01:01:01:01:01",
                                   "00:01:01:01:01:02", "00:01:01:01:01:03",
@@ -50,11 +50,11 @@ ofswitches = [
                     ],
 
                 "non_up_ports" :
-                    [ { "port_num" : 51, "tagged" : False,
+                    [ { "port_num" : 68, "tagged" : False,
                         "mac" : [ "90:e2:ba:3a:2f:90" ] }, ],
 
                 "non_down_ports" :
-                    [ { "port_num" : 50, "tagged" : True,
+                    [ { "port_num" : 67, "tagged" : True,
                         "mac" : [ "90:e2:ba:2c:e9:58" ] }, ],
 
                 },
