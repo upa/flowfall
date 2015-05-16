@@ -344,6 +344,7 @@ class FlowFall (app_manager.RyuApp) :
 
     def send_flowmod (self, datapath, priority, match, act,
                       idle = IDLE_TIMEOUT, hard = HARD_TIMEOUT) :
+
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
 
@@ -358,6 +359,23 @@ class FlowFall (app_manager.RyuApp) :
 
         return
 
+
+    def send_packetout (self, datapath, msg, actions) :
+
+        data = None
+        if msg.buffer_id == datapath.ofproto.OFP_NO_BUFFER :
+            data = msg.data
+
+        parser = datapath.ofproto_parser
+        out = parser.OFPPacketOut (datapath = datapath,
+                                   buffer_id = msg.buffer_id,
+                                   in_port = msg.match['in_port'],
+                                   actions = actions,
+                                   data = data)
+
+        datapath.send_msg (out)
+
+        return
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -487,11 +505,14 @@ class FlowFall (app_manager.RyuApp) :
             match = parser.OFPMatch (eth_type = ethertype, in_port = in_port)
 
             act = prepare_vlan_action (datapath, ofs, in_port, to_port)
+            if mac :
+                act.append (parser.OFPActionSetField (eth_dst = mac))
             act.append (parser.OFPActionOutput (to_port))
 
             prio = ofproto.OFP_DEFAULT_PRIORITY
 
             self.send_flowmod (datapath, prio, match, act)
+            self.send_packetout (datapath, msg, act)
 
             self.log.info ("FlowMod 0x%x in_port %d to_port %d DPID %d" %
                            (ethertype, in_port, to_port, dpid))
@@ -522,15 +543,17 @@ class FlowFall (app_manager.RyuApp) :
                 in_port = in_port,
                 eth_type = ethertype,
                 ipv4_src = ipv4_text_to_int (ip.src),
-                ip_dscp = ip.tos)
+                ip_dscp = ip.tos >> 2)
 
             act = prepare_vlan_action (datapath, ofs, in_port, to_port)
-            act.append (parser.OFPActionSetField (eth_dst = mac))
+            if mac :
+                act.append (parser.OFPActionSetField (eth_dst = mac))
             act.append (parser.OFPActionOutput (to_port))
 
             prio = ofproto.OFP_DEFAULT_PRIORITY
 
             self.send_flowmod (datapath, prio, match, act)
+            self.send_packetout (datapath, msg, act)
 
             self.log.info ("FlowMod %s->Any in_port %d to_port %d DPID %d"
                            % (ip.src, in_port, to_port, dpid))
@@ -571,12 +594,14 @@ class FlowFall (app_manager.RyuApp) :
                 ipv4_src = ipv4_text_to_int (ip.src))
 
             act = prepare_vlan_action (datapath, ofs, in_port, to_port)
-            act.append (parser.OFPActionSetField (eth_dst = mac))
+            if mac :
+                act.append (parser.OFPActionSetField (eth_dst = mac))
             act.append (parser.OFPActionOutput (to_port))
 
             prio = ofproto.OFP_DEFAULT_PRIORITY
 
             self.send_flowmod (datapath, prio, match, act)
+            self.send_packetout (datapath, msg, act)
 
             self.log.info ("FlowMod %s->Any in_port %d to_port %d DPID %d"
                            % (ip.src, in_port, to_port, dpid))
@@ -618,12 +643,14 @@ class FlowFall (app_manager.RyuApp) :
 
 
             act = prepare_vlan_action (datapath, ofs, in_port, to_port)
-            act.append (parser.OFPActionSetField (eth_dst = mac))
+            if mac :
+                act.append (parser.OFPActionSetField (eth_dst = mac))
             act.append (parser.OFPActionOutput (to_port))
 
             prio = ofproto.OFP_DEFAULT_PRIORITY
 
             self.send_flowmod (datapath, prio, match, act)
+            self.send_packetout (datapath, msg, act)
 
             self.log.info ("FlowMod Any->%s in_port %d to_port %d DPID %d"
                            % (ip.dst, in_port, to_port, dpid))
