@@ -43,7 +43,7 @@ def ipv4_text_to_int(ip_text):
 
 
 # static variables
-IDLE_TIMEOUT = 5
+IDLE_TIMEOUT = 30
 HARD_TIMEOUT = 0
 
 
@@ -505,8 +505,8 @@ class FlowFall (app_manager.RyuApp) :
             match = parser.OFPMatch (eth_type = ethertype, in_port = in_port)
 
             act = prepare_vlan_action (datapath, ofs, in_port, to_port)
-            if mac :
-                act.append (parser.OFPActionSetField (eth_dst = mac))
+            #if mac :
+            #    act.append (parser.OFPActionSetField (eth_dst = mac))
             act.append (parser.OFPActionOutput (to_port))
 
             prio = ofproto.OFP_DEFAULT_PRIORITY
