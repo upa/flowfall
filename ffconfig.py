@@ -10,11 +10,8 @@ ofswitches = [
             115 : {
                 "vnf_up_ports" : [
                     {
-                        "port_num" : 49,
-                        "tagged" : False,
-                        "mac" : [ "00:01:01:01:02:00", "00:01:01:01:02:01",
-                                  "00:01:01:01:02:02", "00:01:01:01:02:03",
-                                  ]
+                        "port_num" : 49, "tagged" : False,
+                        "mac" : [ "58:49:3b:ee:a5:12" ]
                         },
                     ],
 
@@ -22,17 +19,17 @@ ofswitches = [
 
                 "non_up_ports" :
                 [ { "port_num" : 50, "tagged" : True,
-                    "mac" : [ "90:e2:ba:3a:2f:90" ] }, ],
+                    "mac" : [ None ] }, ],
 
                 "non_down_ports" :
-                [ { "port_num" : 51, "tagged" : False,
-                    "mac" : [ "90:e2:ba:2c:e9:58" ] }, ],
+                [ { "port_num" : 51, "tagged" : True,
+                    "mac" : [ "a0:36:9f:22:ec:c0" ] }, ],
 
                 },
             }
         },
     {
-        "dpid" : 281474976710658,
+        "dpid" : 2,
         "servicebit" : False,
         "vlan" : {
             115 : {
@@ -41,21 +38,18 @@ ofswitches = [
 
                 "vnf_down_ports" : [
                     {
-                        "port_num" : 49,
-                        "tagged" : False,
-                        "mac" : [ "00:01:01:01:01:00", "00:01:01:01:01:01",
-                                  "00:01:01:01:01:02", "00:01:01:01:01:03",
-                                  ]
+                        "port_num" : 66, "tagged" : False,
+                        "mac" : [ "58:49:3b:ee:a5:11" ]
                         },
                     ],
 
                 "non_up_ports" :
-                    [ { "port_num" : 51, "tagged" : False,
+                    [ { "port_num" : 68, "tagged" : True,
                         "mac" : [ "90:e2:ba:3a:2f:90" ] }, ],
 
                 "non_down_ports" :
-                    [ { "port_num" : 50, "tagged" : True,
-                        "mac" : [ "90:e2:ba:2c:e9:58" ] }, ],
+                    [ { "port_num" : 67, "tagged" : True,
+                        "mac" : [ None ] }, ],
 
                 },
             }
