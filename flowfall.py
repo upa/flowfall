@@ -53,6 +53,8 @@ VNF_DOWN = 1 # to vnf downlink port
 NON_UP   = 2 # pass uplink port
 NON_DOWN = 3 # pass downlink port
 
+OFP_HIGH_PRIORITY = 0x9000
+
 
 class FFLog () :
     def __init__ (self, use_stdout = True) :
@@ -410,22 +412,23 @@ class FlowFall (app_manager.RyuApp) :
     @set_ev_cls (ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler (self, ev) :
         """
-        1. check, is packet NOT ETHER_TYPE_IP ?
+        rule 1. check, is packet NOT ETHER_TYPE_IP ?
             -> if from uplink, set to NON_DOWN port
             -> if from downlink, set to NON_UP port
 
-        2. check, is packet from CLIENT and downlink ports ?
+        rule 2. check, is packet from CLIENT and downlink ports ?
             -> check ToS and decide uplink port
             -> set to uplink flow, and downlink flow (to in_port)
                 > uplink   : MATCH in_port, source IP and ToS, to to_port
                 > downlink : MATCH to_port, destination IP, to in_port
+            installing flows with High Priority to win rule 4
 
-        3. check, is packet from NOT CLIENT and downlink ports ?
+        rule 3. check, is packet from NOT CLIENT and downlink ports ?
             -> set to NON-VNF uplink flow, and downlink flow (to in_port)
                 > uplink   : MATCH in_port, source IP, to to_port
                 > downlink : MATCH to_port, destination IP, to in_port
 
-        4. check, is packet from uplink ports ?
+        rule 4. check, is packet from uplink ports ?
             -> set to NON-VNF downlink flow with low priority
                 > downlink : MATCH in_port, destination IP prefix (0.0.0.0/0)
                 This flow is overwritten when client send a packet
@@ -517,6 +520,7 @@ class FlowFall (app_manager.RyuApp) :
             self.log.info ("FlowMod 0x%x in_port %d to_port %d DPID %d" %
                            (ethertype, in_port, to_port, dpid))
 
+            print
             return
 
 
@@ -550,7 +554,7 @@ class FlowFall (app_manager.RyuApp) :
                 act.append (parser.OFPActionSetField (eth_dst = mac))
             act.append (parser.OFPActionOutput (to_port))
 
-            prio = ofproto.OFP_DEFAULT_PRIORITY
+            prio = OFP_HIGH_PRIORITY
 
             self.send_flowmod (datapath, prio, match, act)
             self.send_packetout (datapath, msg, act)
@@ -569,13 +573,14 @@ class FlowFall (app_manager.RyuApp) :
             act.append (parser.OFPActionSetField (eth_dst = eth.src))
             act.append (parser.OFPActionOutput (in_port))
 
-            prio = ofproto.OFP_DEFAULT_PRIORITY
+            prio = OFP_HIGH_PRIORITY
 
             self.send_flowmod (datapath, prio, match, act)
 
             self.log.info ("FlowMod Any->%s in_port %d to_port %d DPID %d"
                            % (ip.src, to_port, in_port, dpid))
 
+            print
             return
 
 
@@ -624,6 +629,7 @@ class FlowFall (app_manager.RyuApp) :
             self.log.info ("FlowMod Any->%s in_port %d to_port %d DPID %d"
                            % (ip.src, to_port, in_port, dpid))
 
+            print
             return
 
 
@@ -655,9 +661,11 @@ class FlowFall (app_manager.RyuApp) :
             self.log.info ("FlowMod Any->%s in_port %d to_port %d DPID %d"
                            % (ip.dst, in_port, to_port, dpid))
 
+            print
             return
 
         # not reahced
         self.log.err ("All rule is not matched " +
                       "from %s to %s on DPID %d !!" % (ip.src, ip.dst, dpid))
+        print
         return
