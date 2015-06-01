@@ -1,4 +1,4 @@
 
 - packages
 	- apt : python-dev
-	- pip : ryu, py-radix
+	- pip : ryu, py-radix, netaddr
