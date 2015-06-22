@@ -20,7 +20,7 @@ except :
 intf = "shownet-mgmt"
 macaddr = "02:00:aa:01:%02d:%02d" % (hvnum, vmnum)
 config = "running-config-%d-%d.xml" % (hvnum, vmnum)
-controller = "172.16.30.10"
+controller = "172.16.30.33"
 
 
 mac = EUI (macaddr)

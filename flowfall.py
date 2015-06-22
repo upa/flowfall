@@ -8,6 +8,7 @@ import logging
 import struct
 import json
 import radix
+import hashlib
 
 from ryu.base import app_manager
 from ryu.controller import mac_to_port
@@ -26,6 +27,8 @@ from ryu.lib.packet import ethernet
 from ryu.lib.packet import vlan as packetvlan
 from ryu.lib.packet import ipv4
 
+UINT32_MAX = 0xffffffff
+
 import ffconfig
 
 def mac_text_to_int(mac_text):
@@ -42,8 +45,17 @@ def ipv4_text_to_int(ip_text):
     return struct.unpack('!I', addrconv.ipv4.text_to_bin(ip_text))[0]
 
 
+def mask_ntob(mask, err_msg=None):
+    try:
+        return (UINT32_MAX << (32 - mask)) & UINT32_MAX
+    except ValueError:
+        msg = 'illegal netmask'
+        if err_msg is not None:
+            msg = '%s %s' % (err_msg, msg)
+        raise ValueError(msg)
+
 # static variables
-IDLE_TIMEOUT = 30
+IDLE_TIMEOUT = 180
 HARD_TIMEOUT = 0
 
 
@@ -140,6 +152,8 @@ class OFSwitch () :
         if self.vlans.has_key (vlan) :
             return
 
+        self.md5 = hashlib.md5 ()
+
         self.vlans[vlan] = {}
         self.vlans[vlan][VNF_UP] = []
         self.vlans[vlan][VNF_DOWN] = []
@@ -166,6 +180,9 @@ class OFSwitch () :
 
     def get_port (self, vlan, port_type, key) :
 
+        self.md5.update (str (key))
+        hkey = int (self.md5.hexdigest (), 16)
+
         if not self.vlans.has_key (vlan) :
             print "invalid vlan id %d for dpid %d" % (vlan, self.dpid)
             return False
@@ -175,7 +192,7 @@ class OFSwitch () :
         if not portlist :
             return None
 
-        return portlist[key % len (portlist)]
+        return portlist[hkey % len (portlist)]
 
 
     def get_port_mac (self, vlan, port_type, key) :
@@ -183,6 +200,8 @@ class OFSwitch () :
         port = self.get_port (vlan, port_type, key)
 
         if not port :
+            if VNF_UP : return self.get_port (vlan, NON_UP, key)
+            if VNF_DOWN : return self.get_port (vlan, NON_DOWN, key)
             return None
 
         return [port.port_num, port.get_mac (key)]
@@ -317,7 +336,9 @@ class FlowFall (app_manager.RyuApp) :
 
             rnode = self.rtree.add (prefix["prefix"])
             rnode.data["type"] = prefix["type"]
-
+            [ pref, length ]  = prefix["prefix"].split ("/")
+            rnode.data["prefix"] = pref
+            rnode.data["length"] = int (length)
 
         self.log.info ("initialization finished.")
 
@@ -340,6 +361,19 @@ class FlowFall (app_manager.RyuApp) :
 
         if rnode.data["type"] == "CLIENT" :
             return True
+
+        return False
+
+
+    def is_to_client (self, ipaddr) :
+
+        rnode = self.rtree.search_best (str (ipaddr))
+
+        if not rnode : 
+            return False
+
+        if rnode.data["type"] == "CLIENT" :
+            return rnode.data
 
         return False
 
@@ -533,6 +567,7 @@ class FlowFall (app_manager.RyuApp) :
         if ofs.is_from_downlink (in_port) and self.is_from_client (ip.src) :
 
             self.log.info ("Rule 2 : from CLIENT prefix via downlink.")
+            self.log.info ("tos is %d" % ip.tos)
 
             if ofs.check_tos_vnf (ip.tos) :
                 port_type = VNF_UP
@@ -642,11 +677,17 @@ class FlowFall (app_manager.RyuApp) :
             [to_port, mac] = ofs.get_port_mac (vlan, NON_DOWN, key)
 
             # from uplink to downlink
-            match = parser.OFPMatch (
-                in_port = in_port,
-                eth_type = ethertype,
-                ipv4_dst = ipv4_text_to_int (ip.dst))
+            match = parser.OFPMatch ()
+            match.set_in_port (in_port)
+            match.set_dl_type (ethertype)
 
+            rdata = self.is_to_client (ip.dst)
+            if rdata :
+                maskbit = mask_ntob (rdata["length"])
+                addrbit = ipv4_text_to_int (rdata["prefix"])
+                match.set_ipv4_dst_masked (addrbit & maskbit, maskbit)
+            else :
+                match.set_ipv4_dst (ipv4_text_to_int (ip.dst))
 
             act = prepare_vlan_action (datapath, ofs, in_port, to_port)
             if mac :
